@@ -975,6 +975,7 @@ el('#placeOrderBtn').onclick = async()=>{
       type: i.type,
       color: i.color,
       barcode: i.barcode,
+      img: i.img,
       priceUAH: i.priceUAH,
       priceUSD: i.priceUSD,
       qty: i.qty
@@ -1061,18 +1062,44 @@ const itemsList = order.items
     itemsList
   ].join('\n');
 
-  try {
-    const response = await fetch(`https://api.telegram.org/bot${CONFIG.TELEGRAM.BOT_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: CONFIG.TELEGRAM.CHAT_ID,
-        text
-      })
-    });
+  const firstImgRaw = order.items[0]?.img || state.cart[0]?.img || '';
+  const photoUrl = String(firstImgRaw).split(';')[0].trim();
+  const hasPhoto = photoUrl.startsWith('http') && !photoUrl.includes('placehold.co');
 
-    const result = await response.json();
-    if (!result.ok) console.error('Помилка Telegram:', result);
+  try {
+    const chatId = CONFIG.TELEGRAM.CHAT_ID;
+    const apiBase = `https://api.telegram.org/bot${CONFIG.TELEGRAM.BOT_TOKEN}`;
+
+    if (hasPhoto) {
+      const response = await fetch(`${apiBase}/sendPhoto`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          photo: photoUrl,
+          caption: text.length > 1024 ? text.slice(0, 1021) + '…' : text
+        })
+      });
+      const result = await response.json();
+      if (!result.ok) {
+        console.error('Помилка Telegram (фото):', result);
+        const fallback = await fetch(`${apiBase}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: chatId, text })
+        });
+        const fb = await fallback.json();
+        if (!fb.ok) console.error('Помилка Telegram (текст):', fb);
+      }
+    } else {
+      const response = await fetch(`${apiBase}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text })
+      });
+      const result = await response.json();
+      if (!result.ok) console.error('Помилка Telegram:', result);
+    }
   } catch (err) {
     console.error('Помилка при запиті до Telegram:', err);
   }
